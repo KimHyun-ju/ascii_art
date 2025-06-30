@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to ASCII Converter</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 600px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .controls { /* 새롭게 추가된 스타일 */
+            margin-bottom: 20px;
+        }
+        .controls label {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .controls select {
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+        }
+        .drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .drop-area.highlight {
+            background-color: #e0e0e0;
+            border-color: #007bff;
+        }
+        .drop-area p {
+            margin: 0;
+            color: #666;
+        }
+        #result-image-container {
+            margin-top: 20px;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 150px; /* To give it some initial height */
+        }
+        #result-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        #download-btn {
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-top: 15px;
+            display: none; /* Hidden by default */
+            transition: background-color 0.3s ease;
+        }
+        #download-btn:hover {
+            background-color: #218838;
+        }
+        .loading {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none; /* Hidden by default */
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error-message {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image to ASCII Art Converter</h1>
+
+        <div class="controls">
+            <label for="width-select">ASCII Art Width:</label>
+            <select id="width-select">
+                <option value="100">100</option>
+                <option value="300">300</option>
+                <option value="500">500</option>
+                <option value="700">700</option>
+                <option value="900">900</option>
+            </select>
+        </div>
+
+        <div id="drop-area" class="drop-area">
+            <p>Drag & drop an image here, or click to select a file</p>
+            <input type="file" id="file-input" accept="image/*" hidden>
+        </div>
+        <div class="loading" id="loading-spinner"></div>
+        <div class="error-message" id="error-message"></div>
+        <div id="result-image-container">
+            <img id="result-image" alt="Converted ASCII Art">
+        </div>
+        <button id="download-btn">Download ASCII Art Image</button>
+    </div>
+
+    <script>
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const resultImage = document.getElementById('result-image');
+        const downloadBtn = document.getElementById('download-btn');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const errorMessage = document.getElementById('error-message');
+        const widthSelect = document.getElementById('width-select'); // 새로 추가된 width 선택 요소
+
+        const API_URL = 'http://127.0.0.1:8000/ascii'; // Ensure this matches your FastAPI server address
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false); // For global prevention
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop area when dragging over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        // Handle dropped files
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        // Handle file input click
+        dropArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        // ----------------------------------------------------
+        // 여기서부터 변경된 부분
+        // ----------------------------------------------------
+        let selectedFile = null; // 현재 선택된 파일을 저장할 변수
+
+        function handleFiles(files) {
+            if (files.length === 0) {
+                return;
+            }
+            const file = files[0];
+            if (!file.type.startsWith('image/')) {
+                showError('Please upload an image file.');
+                return;
+            }
+            selectedFile = file; // 선택된 파일 저장
+            processImage(); // 파일 처리 시작
+        }
+
+        // width 선택이 변경될 때 또는 새 파일이 드롭/선택될 때 이미지 처리
+        widthSelect.addEventListener('change', () => {
+            if (selectedFile) { // 파일이 이미 선택되어 있다면
+                processImage(); // 다시 이미지 처리
+            }
+        });
+
+        async function processImage() {
+            if (!selectedFile) return; // 선택된 파일이 없으면 아무것도 하지 않음
+
+            showLoading();
+            errorMessage.textContent = ''; // Clear previous errors
+
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+
+            // 선택된 width 값을 가져와 FormData에 추가
+            const selectedWidth = widthSelect.value;
+            formData.append('width', selectedWidth); // FastAPI에서 'width'로 받을 예정
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+                }
+
+                const blob = await response.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                resultImage.src = imageUrl;
+
+                downloadBtn.onclick = () => {
+                    const a = document.createElement('a');
+                    a.href = imageUrl;
+                    a.download = `ascii_art_${selectedWidth}.png`; // 파일명에 width 추가
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(imageUrl);
+                };
+                downloadBtn.style.display = 'block';
+
+                hideLoading();
+            } catch (error) {
+                console.error('Error during file upload:', error);
+                showError(`Failed to convert image: ${error.message}. Please try again.`);
+                hideLoading();
+            }
+        }
+        // ----------------------------------------------------
+        // 변경된 부분 끝
+        // ----------------------------------------------------
+
+        function showLoading() {
+            loadingSpinner.style.display = 'block';
+            resultImage.style.display = 'none';
+            downloadBtn.style.display = 'none';
+        }
+
+        function hideLoading() {
+            loadingSpinner.style.display = 'none';
+            resultImage.style.display = 'block';
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            hideLoading();
+        }
+    </script>
+</body>
+</html>
