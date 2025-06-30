@@ -10,7 +10,7 @@ app = FastAPI()
 # CORS 설정 (프론트엔드 연결 시 필요)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 실제 운영 시엔 특정 origin만 허용 권장
+    allow_origins=["https://ascii-art-2elb.onrender.com"],  # 실제 운영 시엔 특정 origin만 허용 권장
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
